@@ -6,30 +6,61 @@ import re
 res = "dirs/"
 months = {"gennaio":"01", "febbraio":"02", "marzo":"03", "aprile":"04", "maggio":"05", "giugno":"06",
          "luglio":"07", "agosto":"08", "settembre":"09", "ottobre":"10", "novembre":"11", "dicembre":"12"}
+months_n = ["01","02","03","04","05","06","07","08","09","10","11","12"]
+
+date_nf = 1
+
+def getSaveDir(folder, fname):
+    dir_ = os.path.join(folder, fname)
+    base_name = fname
+    n = 1
+    while os.path.exists(dir_):
+       n += 1
+       fname = "("+str(n)+")"+base_name
+       dir_ = os.path.join(folder, fname)
+    
+    return fname
 
 def getPacts(html):
     start_index = 0
+    min_words = 50
     pacts = []
 
     soup = BeautifulSoup(html, "html.parser")
-    #content = str(soup.text)
     content = str(soup)
     for el in re.finditer(r"\[(.*)\.(.*)\.(.*)\.(.*)\]",content):
         pos =  el.span()
-        pacts.append(content[start_index:pos[1]])
+        pact = content[start_index:pos[1]]
+        if len(pact.split(" "))>=min_words:
+            pacts.append(pact)
         start_index = pos[1]+1
 
     return pacts
 
 def getDate(pact): 
+    global date_nf
+    global months
+    global months_n
+
     date = ""
     soup = BeautifulSoup(pact, "html.parser")
     content = soup.text.replace("\xa0"," ")
+    content_s = soup.text.replace("\xa0"," ")
     content = content.split("\n")
     i = len(content)-1
     found = False
     while i>=0 and found==False:
-        temp = content[i].strip().split(" ")
+        content[i] = content[i].replace("  "," ")
+
+        content_temp = content[i].strip()
+        if len(content_temp)>2 and content_temp[len(content_temp)-1]==".":
+            content[i] = content_temp[:len(content_temp)-1]
+
+        first_comma = content[i].find(",")
+        if first_comma>=0:
+            content[i] = (content[i])[first_comma+1:]
+            
+        temp = content[i].replace(".","/").replace("°","").strip().split(" ")
         if len(temp)==3 and temp[1].lower() in months:
             temp[1] = months[temp[1].lower()]
             day = temp[0]
@@ -37,10 +68,30 @@ def getDate(pact):
                 day = "0"+day
             temp[0] =  temp[2]
             temp[2] = day
+            if len(temp[1])==1:
+                temp[1] = "0"+temp[1]
             date = "/".join(temp)
-
+            found = True
+        elif len(temp)==1 and len(temp[0].split("/"))==3:
+            temp = temp[0].split("/")
+            day = temp[0]
+            temp[0] =  temp[2]
+            temp[2] = day
+            if len(temp[1])==1:
+                temp[1] = "0"+temp[1]
+            date = "/".join(temp)
             found = True
         i -= 1
+
+    if found:
+        check_month = date.split("/")
+        if len(check_month)<2 or check_month[1] not in months_n: 
+            found = False
+            date = ""
+    
+    if found==False:
+        print("Date not found: "+str(date_nf))
+        date_nf += 1
 
     return date
 
@@ -52,14 +103,15 @@ def parseFolder(folder):
         if "_isin_" in file:
             continue
         file_path = os.path.join(path,file)
-        with open(file_path, "r") as f:
+        with open(file_path, "r", encoding='utf-8') as f:
             pacts = getPacts(f.read())
         for p in pacts:
             date = getDate(p)
             pact_name = folder + "_isin_" + date.replace("/","_") + "_sha.html"
+            pact_name = getSaveDir(path, pact_name)
             pact_dir = os.path.join(path,pact_name)
             pact_num += 1 
-            with open(pact_dir, "w") as f: #azienda1_isin_2010_10_11_sha
+            with open(pact_dir, "w", encoding='utf-8') as f:
                 f.write(p)
 
             pacts_res.append((p,date))
@@ -97,18 +149,24 @@ def find_words(df,words):
             if "Date" in column and str(row[column])!="nan":
                 fname = company + "_isin_" + str(row[column]).replace("/","_") + "_sha.html"
                 fpath = "dirs/"+company+"/"+fname
-                with open(fpath, "r") as f:
-                    content = f.read().lower()
-                for w in words:
-                    if w.lower() in content:
-                        df.loc[index,w] = 1
+                if os.path.isfile(fpath):
+                    with open(fpath, "r", encoding='utf-8') as f:
+                        content = f.read().lower()
+                    for w in words:
+                        if w.lower() in content:
+                            df.loc[index,w] = 1
                 
     return df
 
 
 if __name__ == "__main__":
     pacts_list = []
+    clauses = []
 
+    with open("clauses.txt", 'r', encoding='utf-8') as file_in:
+        for line in file_in:
+            clauses.append(line.strip().replace('\n',""))
+    
     for _, dirs, _ in os.walk(res):
         for d in dirs:
             years = {}
@@ -124,6 +182,7 @@ if __name__ == "__main__":
             pacts_list.append((d,years))
 
     df = addDates(pacts_list)
-    df = find_words(df, ["a","bwdsadwewadwq","c"])
-    print(df)
+    df = find_words(df, clauses)
+    df.to_csv("results.csv")
+    
     print("Done!")
