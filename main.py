@@ -10,6 +10,7 @@ months = {"gennaio":"01", "febbraio":"02", "marzo":"03", "aprile":"04", "maggio"
          "luglio":"07", "agosto":"08", "settembre":"09", "ottobre":"10", "novembre":"11", "dicembre":"12"}
 months_n = ["01","02","03","04","05","06","07","08","09","10","11","12"]
 provisions_separator = ";"
+csv = "results.csv"
 
 date_nf = 1
 
@@ -189,6 +190,7 @@ if __name__ == "__main__":
     df = addDates(pacts_list)
     df = find_words(df, clauses)
     df = df.replace({"---/--/---": '.'}, regex=True)
-    df.to_csv("results.csv")
+    df = df.replace({"---": '.'}, regex=True)
+    df.to_csv(csv)
     
     print("Done!")
