@@ -3,10 +3,13 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import re
 
-res = "dirs/"
+source = "dirs/"
+provisions = "provisions.csv"
+results = "pacts/"
 months = {"gennaio":"01", "febbraio":"02", "marzo":"03", "aprile":"04", "maggio":"05", "giugno":"06",
          "luglio":"07", "agosto":"08", "settembre":"09", "ottobre":"10", "novembre":"11", "dicembre":"12"}
 months_n = ["01","02","03","04","05","06","07","08","09","10","11","12"]
+provisions_separator = ";"
 
 date_nf = 1
 
@@ -16,7 +19,8 @@ def getSaveDir(folder, fname):
     n = 1
     while os.path.exists(dir_):
        n += 1
-       fname = "("+str(n)+")"+base_name
+       base_name = base_name.replace("_sha.html","")
+       fname = base_name+"_("+str(n)+")_sha.html"
        dir_ = os.path.join(folder, fname)
     
     return fname
@@ -85,7 +89,7 @@ def getDate(pact):
 
     if found:
         check_month = date.split("/")
-        if len(check_month)<2 or check_month[1] not in months_n: 
+        if len(check_month)<2 or check_month[1] not in months_n or (not check_month[0].isdigit() or not check_month[1].isdigit() or not check_month[2].isdigit()): 
             found = False
             date = ""
     
@@ -98,18 +102,18 @@ def getDate(pact):
 def parseFolder(folder):
     pacts_res = []
     pact_num = 0
-    path = os.path.join(res,folder)
+    os.mkdir(os.path.join(results,folder)) 
+    out_path = os.path.join(results,folder)
+    path = os.path.join(source,folder)
     for file in os.listdir(path):
-        if "_isin_" in file:
-            continue
         file_path = os.path.join(path,file)
         with open(file_path, "r", encoding='utf-8') as f:
             pacts = getPacts(f.read())
         for p in pacts:
             date = getDate(p)
             pact_name = folder + "_isin_" + date.replace("/","_") + "_sha.html"
-            pact_name = getSaveDir(path, pact_name)
-            pact_dir = os.path.join(path,pact_name)
+            pact_name = getSaveDir(out_path, pact_name)
+            pact_dir = os.path.join(out_path,pact_name)
             pact_num += 1 
             with open(pact_dir, "w", encoding='utf-8') as f:
                 f.write(p)
@@ -141,20 +145,21 @@ def addDates(pacts_list):
 
 def find_words(df,words):
     for w in words:
-        df[w] = 0
+        df[w[0]] = 0
 
     for index, row in df.iterrows():
         company = row["Company"]
         for column in df:
             if "Date" in column and str(row[column])!="nan":
                 fname = company + "_isin_" + str(row[column]).replace("/","_") + "_sha.html"
-                fpath = "dirs/"+company+"/"+fname
+                fpath = results+company+"/"+fname
                 if os.path.isfile(fpath):
                     with open(fpath, "r", encoding='utf-8') as f:
                         content = f.read().lower()
-                    for w in words:
-                        if w.lower() in content:
-                            df.loc[index,w] = 1
+                    for provision in words:
+                        for w in provision[1:]:
+                            if w.lower() in content:
+                                df.loc[index,provision[0]] = 1
                 
     return df
 
@@ -163,11 +168,11 @@ if __name__ == "__main__":
     pacts_list = []
     clauses = []
 
-    with open("clauses.txt", 'r', encoding='utf-8') as file_in:
+    with open(provisions, 'r', encoding='utf-8') as file_in:
         for line in file_in:
-            clauses.append(line.strip().replace('\n',""))
+            clauses.append(line.strip().replace('\n',"").split(provisions_separator))
     
-    for _, dirs, _ in os.walk(res):
+    for _, dirs, _ in os.walk(source):
         for d in dirs:
             years = {}
             pacts = parseFolder(d)
@@ -183,6 +188,7 @@ if __name__ == "__main__":
 
     df = addDates(pacts_list)
     df = find_words(df, clauses)
+    df = df.replace({"---/--/---": '.'}, regex=True)
     df.to_csv("results.csv")
     
     print("Done!")
